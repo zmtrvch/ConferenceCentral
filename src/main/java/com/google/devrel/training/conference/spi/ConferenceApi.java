@@ -3,8 +3,9 @@ package com.google.devrel.training.conference.spi;
 
 import static com.google.devrel.training.conference.service.OfyService.factory;
 import static com.google.devrel.training.conference.service.OfyService.ofy;
-
+import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import javax.inject.Named;
 
@@ -258,8 +259,6 @@ public class ConferenceApi {
         query = query.filter("month =", 1) .order("maxAttendees").order("name");
         return query.list();
     }
-
-
     /**
      * Returns a Conference object with the given conferenceId.
      *
@@ -329,145 +328,166 @@ public class ConferenceApi {
             httpMethod = HttpMethod.POST
     )
 
-    public WrappedBoolean registerForConference_SKELETON(final User user,
-                                                         @Named("websafeConferenceKey") final String websafeConferenceKey)
+    public WrappedBoolean registerForConference(final User user,
+
+                                                        @Named("websafeConferenceKey") final String websafeConferenceKey)
+
             throws UnauthorizedException, NotFoundException,
+
             ForbiddenException, ConflictException {
+
+// If not signed in, throw a 401 error.
+
+        if (user == null) {
+
+            throw new UnauthorizedException("Authorization required");
+
+        }
+
+
+// Get the userId
+
+        WrappedBoolean result = ofy().transact(new Work<WrappedBoolean>() {
+
+            @Override
+
+            public WrappedBoolean run() {
+
+                try {
+
+
+// Get the conference key
+
+                    Key<Conference> conferenceKey = Key.create(websafeConferenceKey);
+
+
+// Get the Conference entity from the datastore
+
+                    Conference conference = ofy().load().key(conferenceKey).now();
+
+
+// 404 when there is no Conference with the given conferenceId.
+
+                    if (conference == null) {
+
+                        return new WrappedBoolean(false,
+
+                                "No Conference found with key: "
+
+                                        + websafeConferenceKey);
+
+                    }
+
+
+// Get the user's Profile entity
+
+                    Profile profile = getProfileFromUser(user);
+
+
+// Has the user already registered to attend this conference?
+
+                    if (profile.getConferenceKeysToAttend().contains(
+
+                            websafeConferenceKey)) {
+
+                        return new WrappedBoolean(false, "Already registered");
+
+                    } else if (conference.getSeatsAvailable() <= 0) {
+
+                        return new WrappedBoolean(false, "No seats available");
+
+                    } else {
+
+// All looks good, go ahead and book the seat
+
+                        profile.addToConferenceKeysToAttend(websafeConferenceKey);
+
+                        conference.bookSeats(1);
+
+
+// Save the Conference and Profile entities
+
+                        ofy().save().entities(profile, conference).now();
+
+// We are booked!
+
+                        return new WrappedBoolean(true);
+
+                    }
+
+
+                } catch (Exception e) {
+
+                    return new WrappedBoolean(false, "Unknown exception");
+
+                }
+
+            }
+
+        });
+
+// if result is false
+
+        if (!result.getResult()) {
+
+            if (result.getReason() == "Already registered") {
+
+                throw new ConflictException("You have already registered");
+
+            } else if (result.getReason() == "No seats available") {
+
+                throw new ConflictException("There are no seats available");
+
+            } else {
+
+                throw new ForbiddenException("Unknown exception");
+
+            }
+
+        }
+
+        return result;
+
+    }
+    /**
+     * Returns a collection of Conference Object that the user is going to attend.
+     *
+     * @param user An user who invokes this method, null when the user is not signed in.
+     * @return a Collection of Conferences that the user is going to attend.
+     * @throws UnauthorizedException when the User object is null.
+     */
+    @ApiMethod(
+            name = "getConferencesToAttend",
+            path = "getConferencesToAttend",
+            httpMethod = HttpMethod.GET
+    )
+    public Collection<Conference> getConferencesToAttend(final User user)
+            throws UnauthorizedException, NotFoundException {
         // If not signed in, throw a 401 error.
         if (user == null) {
             throw new UnauthorizedException("Authorization required");
         }
-
-        // Get the userId
-        final String userId = user.getUserId();
-
         // TODO
-        // Start transaction
-        final WrappedBoolean result = ofy().transact(new Work<WrappedBoolean>() {
-         public WrappedBoolean run() {
-
-                return result;
-            }
-        });
-
-        try {
-
-            // TODO
-            // Get the conference key -- you can get it from websafeConferenceKey
-            // Will throw ForbiddenException if the key cannot be created
-            Key<Conference> conferenceKey = Key.create(websafeConferenceKey);
-
-
-                    // TODO
-                    // Get the Conference entity from the datastore
-            Conference conference = ofy().load().key(conferenceKey).now();
-
-            // 404 when there is no Conference with the given conferenceId.
-            if (conference == null) {
-                return new WrappedBoolean (false,
-                        "No Conference found with key: "
-                                + websafeConferenceKey);
-            }
-
-            // TODO
-            // Get the user's Profile entity
-            Profile profile = getProfileFromUser(user);
-
-            // Has the user already registered to attend this conference?
-            if (profile.getConferenceKeysToAttend().contains(
-                    websafeConferenceKey)) {
-                return new WrappedBoolean (false, "Already registered");
-            } else if (conference.getSeatsAvailable() <= 0) {
-                return new WrappedBoolean (false, "No seats available");
-            } else {
-                // All looks good, go ahead and book the seat
-
-                // TODO
-                // Add the websafeConferenceKey to the profile's
-                // conferencesToAttend property
-                profile.addToConferenceKeysToAttend(websafeConferenceKey);
-
-                // TODO
-                // Decrease the conference's seatsAvailable
-                // You can use the bookSeats() method on Conference
-
-                // TODO
-                // Save the Conference and Profile entities
-
-                // We are booked!
-                return new WrappedBoolean(true, "Registration successful");
-            }
-
-        }
-        catch (Exception e) {
-            return new WrappedBoolean(false, "Unknown exception");
-        }
-    }
-    });
-
-        // if result is false
-        if (!result.getResult()) {
-        if (result.getReason().contains("No Conference found with key")) {
-        throw new NotFoundException (result.getReason());
-        }
-        else if (result.getReason() == "Already registered") {
-        throw new ConflictException("You have already registered");
-        }
-        else if (result.getReason() == "No seats available") {
-        throw new ConflictException("There are no seats available");
-        }
-        else {
-        throw new ForbiddenException("Unknown exception");
-        }
-        }
-        return result;
-        }
-
-
-/**
- * Returns a collection of Conference Object that the user is going to attend.
- *
- * @param user An user who invokes this method, null when the user is not signed in.
- * @return a Collection of Conferences that the user is going to attend.
- * @throws UnauthorizedException when the User object is null.
- */
-      @ApiMethod(
-        name = "getConferencesToAttend",
-        path = "getConferencesToAttend",
-        httpMethod = HttpMethod.GET
-       )
-public Collection<Conference> getConferencesToAttend(final User user)
-        throws UnauthorizedException, NotFoundException {
-
+        // Get the Profile entity for the user
+        Profile profile = getProfileFromUser(user); // Change this;
+        if (profile == null) {
+            throw new NotFoundException("Profile doesn't exist.");
         }
 
         // TODO
         // Get the value of the profile's conferenceKeysToAttend property
-        List<String> keyStringsToAttend = null; // change this
+        List<String> keyStringsToAttend = profile.getConferenceKeysToAttend(); // change this
 
         // TODO
         // Iterate over keyStringsToAttend,
         // and return a Collection of the
         // Conference entities that the user has registered to atend
+        
 
         return null;  // change this
-        }
-/**
- * Unregister from the specified Conference.     *
- * @param user An user who invokes this method, null when the user is not signed in.
- * @param websafeConferenceKey The String representation of the Conference Key to unregister  from.
- * @return Boolean true when success, otherwise false.
- * @throws UnauthorizedException when the user is not signed in.
- * @throws NotFoundException when there is no Conference with the given conferenceId.
- */
-@ApiMethod(
-        name = "unregisterFromConference",
-        path = "conference/{websafeConferenceKey}/registration",
-        httpMethod = HttpMethod.DELETE)
-public WrappedBoolean unregisterFromConference(
-final User user,
-@Named("websafeConferenceKey") final String websafeConferenceKey
-        ) throws UnauthorizedException, NotFoundException, ForbiddenException, ConflictException {
-        }
+    }
+
+
 
 }
+
